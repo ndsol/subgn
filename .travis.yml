@@ -1,0 +1,47 @@
+dist: xenial
+sudo: false
+language: cpp
+cache: ccache
+
+matrix:
+  include:
+    - os: osx
+      osx_image: xcode10.2
+      env:
+        - MATRIX_EVAL="HOMEBREW_NO_AUTO_UPDATE=1 brew install ccache && export PATH=\"/usr/local/opt/ccache/libexec:\$PATH\"; echo PATH=\$PATH"
+
+    - os: linux
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - gcc-7
+          - g++-7
+      env:
+        - MATRIX_EVAL="export CC=gcc-7; export CXX=g++-7"
+
+before_install:
+- eval "${MATRIX_EVAL}"
+- $CC -v
+- $CXX -v
+- CC_WRAPPER=ccache
+# travis xenial has ccache-3.2.4: gcc -C is used to workaround a false
+# -Wimplicit-fallthrough warning. ccache 3.4 has --keep_comments_cpp, use that
+- if [ "$(uname)" == "Linux" -a "${CC/gcc/}" != "$CC" ]; then export CFLAGS="${CFLAGS} -C"; export CXXFLAGS="${CXXFLAGS} -C"; fi
+- echo "CFLAGS=$CFLAGS"
+- echo "CXXFLAGS=$CXXFLAGS"
+- ccache --zero-stats
+
+script: ( cd subninja && ./configure.py --bootstrap ) &&
+  export PATH=$PATH:$PWD/subninja &&
+  export BOOTSTRAP_ON_TRAVIS_J=3 &&
+  ( cd tools/gn && bootstrap/bootstrap.py -v -s --no-clean ) &&
+  ccache --show-stats
+
+notifications:
+  email:
+    on_success: never
+    on_failure: always
+  slack:
+    secure: Hgl2FdaFdVNorSkRE3WKCcWUQFlhVOc+He9TNFE7/EjYNago+3E6OLtQAA0/EQvyRfzsnUd/eBDwYgX3gJzYPjIHWQ8TiHNDrOcJ0CxUHNSmOB0sszE0zkMiE+JxcCkhsij5p26Is0aTA/cogZojb5GbDkw8rB0wEn9ddc/kYwH9caAY4CEkAxE0lqumbLAbKIm4U+0gQJF6q/pz+v7quIkIgWz9vfav0YS/z7mn1Eava2Ifed3FZ9aBubR8gkJMQklw24/UzvE9uHkc/swS3ryOffrH+UkCAFt6A2TUB+Facc/L6wkW66ud539+G9ZGPnbI3Q0LIyftsJMFk9icQOJjn7lbW1H7C/x+tPfhe1qG4tJTn+tqKLmpLm1h18veGBhI+G7JFfj+rnQ6/4wzmL3Ys4zjjq2nMR/ArLrSpiHZ/TCzKlFzQTzpIMvTxLoLdZ8ceM6hT0r3celxD1VMcF4D2bXjWtD6IRysFlVP5kx68leqpJyPNmVRNxR6J9/szNAElLlY1H34G69z8Wsk8yjB7gpOFUOZ3aJdT+3dIyPpMQPltf9FeIxa70fYuEk8VDKphxtmee1Lsvy0JfWNlLyCyR7irT8Nnf+1E/FFzr1lu/pNXUMx3gWuvlBIzT0TeDC+aI25mA+1MPkPfIu8k/Ohue5ZWC/LSle0HusAquA=

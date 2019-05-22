@@ -1,0 +1,8 @@
+*.swp
+*.pyc
+out
+out_bootstrap
+gn
+ninja
+gn.exe
+ninja.exe

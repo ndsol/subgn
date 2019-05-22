@@ -1,0 +1,359 @@
+--- a/tools/gn/bootstrap/bootstrap.py
++++ b/tools/gn/bootstrap/bootstrap.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ # Copyright 2014 The Chromium Authors. All rights reserved.
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+@@ -69,7 +69,6 @@ def run_build(tempdir, options):
+     build_rel = os.path.join('out', 'Release')
+   build_root = os.path.join(SRC_ROOT, build_rel)
+ 
+-  print 'Building gn manually in a temporary directory for bootstrapping...'
+   build_gn_with_ninja_manually(tempdir, options)
+   temp_gn = os.path.join(tempdir, 'gn')
+   out_gn = os.path.join(build_root, 'gn')
+@@ -82,7 +81,7 @@ def run_build(tempdir, options):
+     mkdir_p(build_root)
+     shutil.copy2(temp_gn, out_gn)
+   else:
+-    print 'Building gn using itself to %s...' % build_rel
++    print('Building gn using itself to %s...' % build_rel)
+     build_gn_with_gn(temp_gn, build_root, options)
+ 
+   if options.output:
+@@ -206,6 +205,8 @@ def build_gn_with_ninja_manually(tempdir, options):
+   write_gn_ninja(os.path.join(tempdir, 'build.ninja'),
+                  root_gen_dir, options)
+   cmd = ['ninja', '-C', tempdir, '-w', 'dupbuild=err']
++  if os.environ.get('BOOTSTRAP_ON_TRAVIS_J', '0') != '0':
++    cmd.append('-j%s' % os.environ.get('BOOTSTRAP_ON_TRAVIS_J', '0'))
+   if options.verbose:
+     cmd.append('-v')
+ 
+@@ -269,14 +270,14 @@ def write_generic_ninja(path, static_libraries, executables,
+                              escape_path_ninja(
+                                  os.path.join(SRC_ROOT, src_file))),
+         '  includes = %s' % ' '.join(
+-            ['-I' + escape_path_ninja(dirname) for dirname in
++            ['"-I' + escape_path_ninja(dirname) +'"' for dirname in
+              include_dirs + settings.get('include_dirs', [])]),
+         '  cflags = %s' % ' '.join(cflags + settings.get('cflags', [])),
+         '  cflags_cc = %s' %
+             ' '.join(cflags_cc + settings.get('cflags_cc', [])),
+     ])
+ 
+-  for library, settings in static_libraries.iteritems():
++  for library, settings in static_libraries.items():
+     for src_file in settings['sources']:
+       build_source(src_file, settings)
+ 
+@@ -284,7 +285,7 @@ def write_generic_ninja(path, static_libraries, executables,
+         library_to_a(library),
+         ' '.join([src_to_obj(src_file) for src_file in settings['sources']])))
+ 
+-  for executable, settings in executables.iteritems():
++  for executable, settings in executables.items():
+     for src_file in settings['sources']:
+       build_source(src_file, settings)
+ 
+@@ -352,14 +353,21 @@ def write_gn_ninja(path, root_gen_dir, options):
+         '-pipe',
+         '-fno-exceptions'
+     ])
+-    cflags_cc.extend(['-std=c++14', '-Wno-c++11-narrowing'])
++    cflags_cc.extend(['-std=c++11', '-Wno-c++11-narrowing', '-Wno-attributes'])
+     if is_aix:
+-     cflags.extend(['-maix64'])
++     cflags.extend(['-maix64', '-DOS_AIX'])
+      ldflags.extend([ '-maix64 -Wl,-bbigtoc' ])
++    elif is_mac:
++      cflags.extend([
++        '-Wno-deprecated-declarations', '-DOS_MACOSX'
++      ])
++    else:
++      cflags.extend(['-DOS_LINUX'])
+   elif is_win:
++    ldflags.extend(['/LTCG'])
+     if not options.debug:
+       cflags.extend(['/Ox', '/DNDEBUG', '/GL'])
+-      ldflags.extend(['/LTCG', '/OPT:REF', '/OPT:ICF'])
++      ldflags.extend(['/OPT:REF', '/OPT:ICF'])
+ 
+     cflags.extend([
+         '/FS',
+@@ -369,11 +377,17 @@ def write_gn_ninja(path, root_gen_dir, options):
+         '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX',
+         '/D_CRT_SECURE_NO_DEPRECATE', '/D_SCL_SECURE_NO_DEPRECATE',
+         '/D_WIN32_WINNT=0x0A00', '/DWINVER=0x0A00',
+-        '/DUNICODE', '/D_UNICODE',
++        '/DUNICODE', '/D_UNICODE', '/DOS_WIN',
+     ])
+     cflags_cc.extend([
+         '/GR-',
+         '/D_HAS_EXCEPTIONS=0',
++        '/wd4267',
++        '/wd4312',
++        '/wd4838',
++        '/wd4996',
++        '/wd4530',
++        '/wd4577',
+     ])
+ 
+     target_arch = windows_target_build_arch()
+@@ -512,7 +526,6 @@ def write_gn_ninja(path, root_gen_dir, options):
+       'base/task_scheduler/scheduler_lock_impl.cc',
+       'base/task_scheduler/scheduler_single_thread_task_runner_manager.cc',
+       'base/task_scheduler/scheduler_worker.cc',
+-      'base/task_scheduler/scheduler_worker_pool.cc',
+       'base/task_scheduler/scheduler_worker_pool_impl.cc',
+       'base/task_scheduler/scheduler_worker_pool_params.cc',
+       'base/task_scheduler/scheduler_worker_stack.cc',
+@@ -529,7 +542,6 @@ def write_gn_ninja(path, root_gen_dir, options):
+       'base/third_party/icu/icu_utf.cc',
+       'base/third_party/nspr/prtime.cc',
+       'base/threading/post_task_and_reply_impl.cc',
+-      'base/threading/scoped_blocking_call.cc',
+       'base/threading/sequence_local_storage_map.cc',
+       'base/threading/sequenced_task_runner_handle.cc',
+       'base/threading/sequenced_worker_pool.cc',
+@@ -613,7 +625,6 @@ def write_gn_ninja(path, root_gen_dir, options):
+         'base/synchronization/condition_variable_posix.cc',
+         'base/synchronization/lock_impl_posix.cc',
+         'base/synchronization/read_write_lock_posix.cc',
+-        'base/synchronization/waitable_event_posix.cc',
+         'base/sys_info_posix.cc',
+         'base/task_scheduler/task_tracker_posix.cc',
+         'base/threading/platform_thread_internal_posix.cc',
+@@ -621,10 +632,19 @@ def write_gn_ninja(path, root_gen_dir, options):
+         'base/threading/thread_local_storage_posix.cc',
+         'base/threading/worker_pool_posix.cc',
+         'base/time/time_conversion_posix.cc',
+-        'base/time/time_exploded_posix.cc',
+-        'base/time/time_now_posix.cc',
+         'base/trace_event/heap_profiler_allocation_register_posix.cc',
+     ])
++    if not is_mac:
++      static_libraries['base']['sources'].extend([
++          'base/time/time_now_posix.cc',
++          'base/time/time_exploded_posix.cc',
++          'base/synchronization/waitable_event_posix.cc',
++      ])
++    else:
++      static_libraries['base']['sources'].extend([
++          'base/synchronization/waitable_event_mac.cc',
++      ])
++
+     static_libraries['libevent'] = {
+         'sources': [
+             'base/third_party/libevent/buffer.c',
+--- a/tools/gn/escape.cc
++++ b/tools/gn/escape.cc
+@@ -75,7 +75,11 @@ void EscapeStringToString_WindowsNinjaFork(const base::StringPiece& str,
+ 
+   if (str.find_first_of(" \"") == std::string::npos) {
+     // Simple case, don't quote.
+-    EscapeStringToString_Ninja(str, options, dest, needed_quoting);
++    if (options.mode == ESCAPE_NINJA_DEPFILE) {
++      *dest = str.as_string();
++    } else {
++      EscapeStringToString_Ninja(str, options, dest, needed_quoting);
++    }
+   } else {
+     if (!options.inhibit_quoting)
+       dest->push_back('"');
+@@ -96,6 +100,12 @@ void EscapeStringToString_WindowsNinjaFork(const base::StringPiece& str,
+         // backslashes, then backslash-escape the quote.
+         dest->append(backslash_count * 2 + 1, '\\');
+         dest->push_back('"');
++      } else if (options.mode == ESCAPE_NINJA_DEPFILE) {
++        // Depfile parsing does not understand '$' escape character.
++        if (str[i] == ' ' || str[i] == '"')
++          backslash_count++;
++        dest->append(backslash_count, '\\');
++        dest->push_back(str[i]);
+       } else {
+         // Non-special Windows character, just escape for Ninja. Also, add any
+         // backslashes we read previously, these are literals.
+@@ -150,6 +160,7 @@ void EscapeStringToString(const base::StringPiece& str,
+     case ESCAPE_NINJA:
+       EscapeStringToString_Ninja(str, options, dest, needed_quoting);
+       break;
++    case ESCAPE_NINJA_DEPFILE:
+     case ESCAPE_NINJA_COMMAND:
+       switch (options.platform) {
+         case ESCAPE_PLATFORM_CURRENT:
+--- a/tools/gn/escape.h
++++ b/tools/gn/escape.h
+@@ -26,6 +26,9 @@ enum EscapingMode {
+   // shell characters which we want to pass to the shell (like when writing
+   // tool commands). Only Ninja "$" are escaped.
+   ESCAPE_NINJA_PREFORMATTED_COMMAND,
++
++  // For writing depfiles. Escaping is needed because space is a deliminter.
++  ESCAPE_NINJA_DEPFILE,
+ };
+ 
+ enum EscapingPlatform {
+--- a/tools/gn/input_conversion.cc
++++ b/tools/gn/input_conversion.cc
+@@ -21,6 +21,24 @@
+ #include "tools/gn/tokenizer.h"
+ #include "tools/gn/value.h"
+ 
++GeneratedOutput g_generated_output;
++
++static Value GenerateOutput(const Settings* settings, const std::string& input,
++                            Err* err) {
++  auto cleaned = input;
++  std::string::size_type pos = 0;
++  while ((pos = cleaned.find("\r\n", pos)) != std::string::npos) {
++    cleaned.replace(pos, 2, "\n");
++  }
++  pos = 0;
++  while ((pos = cleaned.find("\r", pos)) != std::string::npos) {
++    cleaned[pos] = '\n';
++  }
++  base::AutoLock autoLock(g_generated_output.lock);
++  g_generated_output.output.emplace_back(cleaned);
++  return Value();
++}
++
+ namespace {
+ 
+ enum ValueOrScope {
+@@ -138,6 +156,8 @@ Value DoConvertInputToValue(const Settings* settings,
+     return ParseList(input, origin, err);
+   if (input_conversion == "scope")
+     return ParseValueOrScope(settings, input, PARSE_SCOPE, origin, err);
++  if (input_conversion == "generate output")
++    return GenerateOutput(settings, input, err);
+ 
+   *err = Err(original_input_conversion, "Not a valid input_conversion.",
+              "Run gn help input_conversion to see your options.");
+@@ -176,6 +196,9 @@ extern const char kInputConversion_Help[] =
+   "string"
+       Return the file contents into a single string.
+ 
++  "generate output"
++      Append the file contents to the root build.ninja file verbatim.
++
+   "value"
+       Parse the input as if it was a literal rvalue in a buildfile. Examples of
+       typical program output using this mode:
+--- a/tools/gn/label.h
++++ b/tools/gn/label.h
+@@ -125,4 +125,12 @@ inline void swap(Label& lhs, Label& rhs) {
+ 
+ extern const char kLabels_Help[];
+ 
++#include "base/synchronization/lock.h"
++struct GeneratedOutput {
++  base::Lock lock;
++  std::vector<std::string> output;
++};
++
++extern GeneratedOutput g_generated_output;
++
+ #endif  // TOOLS_GN_LABEL_H_
+--- a/tools/gn/setup.cc
++++ b/tools/gn/setup.cc
+@@ -657,7 +657,7 @@ bool Setup::FillPythonPath(const base::CommandLine& cmdline) {
+     }
+     build_settings_.set_python_path(python_path.NormalizePathSeparatorsTo('/'));
+ #else
+-    build_settings_.set_python_path(base::FilePath("python"));
++    build_settings_.set_python_path(base::FilePath("python3"));
+ #endif
+   }
+   return true;
+--- a/build/write_buildflag_header.py
++++ b/build/write_buildflag_header.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ # Copyright 2015 The Chromium Authors. All rights reserved.
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+--- a/build/write_build_date_header.py
++++ b/build/write_build_date_header.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ # Copyright (c) 2016 The Chromium Authors. All rights reserved.
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+--- a/tools/gn/ninja_build_writer.cc
++++ b/tools/gn/ninja_build_writer.cc
+@@ -223,6 +223,15 @@ bool NinjaBuildWriter::RunAndWriteFile(
+   base::FilePath ninja_file_name(build_settings->GetFullPath(
+       SourceFile(build_settings->build_dir().value() + "build.ninja")));
+   base::CreateDirectory(ninja_file_name.DirName());
++  // Defend against future code changes in command_gen.cc that might cause
++  // threads to still be writing to g_generated_output. This does the bare
++  // minimum to avert a segfault.
++  {
++    base::AutoLock autoLock(g_generated_output.lock);
++    for (auto& s : g_generated_output.output) {
++      file << s;
++    }
++  }
+   std::string ninja_contents = file.str();
+   if (base::WriteFile(ninja_file_name, ninja_contents.data(),
+                       static_cast<int>(ninja_contents.size())) !=
+@@ -268,8 +277,12 @@ void NinjaBuildWriter::WriteNinjaRules() {
+   std::set<base::FilePath> fileset(input_files.begin(), input_files.end());
+   fileset.insert(other_files.begin(), other_files.end());
+ 
++  EscapeOptions option;
++  option.mode = ESCAPE_NINJA_DEPFILE;
++  // Only the win fork has correct depfile escaping. This is not a bug.
++  option.platform = ESCAPE_PLATFORM_WIN;
+   for (const auto& other_file : fileset)
+-    dep_out_ << " " << FilePathToUTF8(other_file);
++    dep_out_ << " " << EscapeString(FilePathToUTF8(other_file), option, NULL);
+ 
+   out_ << std::endl;
+ }
+@@ -304,6 +317,9 @@ void NinjaBuildWriter::WriteAllPools() {
+               return pool_name(a) < pool_name(b);
+             });
+   for (const Pool* pool : sorted_pools) {
++    if (pool_name(pool) == "console") {
++      continue;
++    }
+     out_ << "pool " << pool_name(pool) << std::endl
+          << "  depth = " << pool->depth() << std::endl
+          << std::endl;
+diff --git a/tools/gn/pool.cc b/tools/gn/pool.cc
+index 75a7504e..b8fcae27 100644
+--- a/tools/gn/pool.cc
++++ b/tools/gn/pool.cc
+@@ -25,6 +25,10 @@ std::string Pool::GetNinjaName(const Label& default_toolchain) const {
+ }
+ 
+ std::string Pool::GetNinjaName(bool include_toolchain) const {
++  if (label().name() == "console") {
++    return label().name();
++  }
++
+   std::ostringstream buffer;
+   if (include_toolchain) {
+     DCHECK(label().toolchain_dir().is_source_absolute());
+--- a/base/mac/foundation_util.h
++++ b/base/mac/foundation_util.h
+@@ -52,13 +52,8 @@ typedef CR_FORWARD_ENUM(unsigned int, NSSearchPathDirectory);
+ typedef unsigned int NSSearchPathDomainMask;
+ #endif
+ 
+-typedef struct OpaqueSecTrustRef* SecACLRef;
+-typedef struct OpaqueSecTrustedApplicationRef* SecTrustedApplicationRef;
+-
+ #if defined(OS_IOS)
+ typedef struct CF_BRIDGED_TYPE(id) __SecPolicy* SecPolicyRef;
+-#else
+-typedef struct OpaqueSecPolicyRef* SecPolicyRef;
+ #endif
+ 
+ namespace base {

@@ -1,0 +1,3 @@
+[submodule "subninja"]
+	path = subninja
+	url = https://github.com/ndsol/subninja
